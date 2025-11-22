@@ -62,6 +62,44 @@ async def sortme(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown",
     )
 
+# ================== ADMIN SORTING HAT ==================
+
+async def hatsort(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    admin = update.effective_user
+
+    # Only admins can use this
+    if not is_admin(admin.id):
+        await update.message.reply_text("🚫 Only professors can use the Sorting Hat manually.")
+        return
+
+    # Must be used as a reply
+    if not update.message.reply_to_message:
+        await update.message.reply_text("Reply to a student's message and use:\n`/hatsort <optional_house>`", parse_mode="Markdown")
+        return
+
+    target = update.message.reply_to_message.from_user
+
+    # If admin gave a house, use it. Otherwise assign random.
+    if context.args:
+        house = context.args[0].capitalize()
+        if house not in HOUSES:
+            await update.message.reply_text(
+                "❌ Invalid house name.\nUse one of: Gryffindor, Slytherin, Ravenclaw, Hufflepuff."
+            )
+            return
+    else:
+        house = random.choice(HOUSES)
+
+    # Save in the same dict used by /sortme
+    user_houses[target.id] = house
+
+    target_name = "@" + target.username if target.username else target.first_name
+    spark = random.choice(["✨", "⚡", "🪄", "🌟"])
+    await update.message.reply_text(
+        f"🎩 The Sorting Hat has *manually* spoken!\n"
+        f"{target_name} has been placed in *{house}* {spark}",
+        parse_mode="Markdown",
+    )
 
 async def points(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = "🏆 *Current House Points:*\n\n"
@@ -256,6 +294,7 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("sortme", sortme))
+    app.add_handler(CommandHandler("hatsort", hatsort))
     app.add_handler(CommandHandler("points", points))
     app.add_handler(CommandHandler("quiz", quiz))
     app.add_handler(CommandHandler("addpoints", addpoints))
