@@ -101,6 +101,79 @@ async def hatsort(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown",
     )
 
+async def resort(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    admin = update.effective_user
+
+    # Only admins
+    if not is_admin(admin.id):
+        await update.message.reply_text("🚫 Only professors can re-sort students.")
+        return
+
+    # Must be reply
+    if not update.message.reply_to_message:
+        await update.message.reply_text(
+            "Reply to a student's message and use:\n`/resort <house>`",
+            parse_mode="Markdown"
+        )
+        return
+
+    if not context.args:
+        await update.message.reply_text(
+            "You must specify a house.\nExample: `/resort Gryffindor`",
+            parse_mode="Markdown"
+        )
+        return
+
+    new_house = context.args[0].capitalize()
+    if new_house not in HOUSES:
+        await update.message.reply_text(
+            "❌ Invalid house name.\nUse one of: Gryffindor, Slytherin, Ravenclaw, Hufflepuff."
+        )
+        return
+
+    target = update.message.reply_to_message.from_user
+    user_houses[target.id] = new_house
+
+    target_name = "@" + target.username if target.username else target.first_name
+    spark = random.choice(["✨", "⚡", "🪄", "🌟"])
+    await update.message.reply_text(
+        f"🎩 The Sorting Hat has *changed its mind!*\n"
+        f"{target_name} has been moved to *{new_house}* {spark}",
+        parse_mode="Markdown",
+    )
+
+
+async def unsort(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    admin = update.effective_user
+
+    # Only admins
+    if not is_admin(admin.id):
+        await update.message.reply_text("🚫 Only professors can unsort students.")
+        return
+
+    # Must be reply
+    if not update.message.reply_to_message:
+        await update.message.reply_text(
+            "Reply to a student's message and use:\n`/unsort`",
+            parse_mode="Markdown"
+        )
+        return
+
+    target = update.message.reply_to_message.from_user
+
+    if target.id in user_houses:
+        old_house = user_houses.pop(target.id)
+        target_name = "@" + target.username if target.username else target.first_name
+        await update.message.reply_text(
+            f"🧹 {target_name} has been *removed* from *{old_house}*.\n"
+            f"They can now use `/sortme` to be sorted again.",
+            parse_mode="Markdown",
+        )
+    else:
+        await update.message.reply_text(
+            "🤔 That student is not sorted into any house yet."
+        )
+
 async def points(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = "🏆 *Current House Points:*\n\n"
     for house in HOUSES:
@@ -295,6 +368,8 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("sortme", sortme))
     app.add_handler(CommandHandler("hatsort", hatsort))
+    app.add_handler(CommandHandler("resort", resort))
+app.add_handler(CommandHandler("unsort", unsort))
     app.add_handler(CommandHandler("points", points))
     app.add_handler(CommandHandler("quiz", quiz))
     app.add_handler(CommandHandler("addpoints", addpoints))
