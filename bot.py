@@ -12,8 +12,9 @@ from telegram.ext import (
 
 # ================== CONFIG ==================
 
-import os
-TOKEN = os.environ.get("8214478922:AAEeLgZD3aUSKeN_voD-Aw7Eymd3Ow4bCHU")
+# No env var, direct token
+TOKEN = "8214478922:AAEeLgZD3aUSKeN_voD-Aw7Eymd3Ow4bCHU"
+
 
 
 HOUSES = ["Gryffindor", "Ravenclaw", "Hufflepuff", "Slytherin"]
@@ -249,8 +250,7 @@ async def stupefy(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ================== MAIN ==================
 
 def main():
-    if not TOKEN:
-        raise RuntimeError("BOT_TOKEN not set in environment variables")
+    
 
     app = ApplicationBuilder().token(TOKEN).build()
 
