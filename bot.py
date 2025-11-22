@@ -369,7 +369,7 @@ def main():
     app.add_handler(CommandHandler("sortme", sortme))
     app.add_handler(CommandHandler("hatsort", hatsort))
     app.add_handler(CommandHandler("resort", resort))
-app.add_handler(CommandHandler("unsort", unsort))
+    app.add_handler(CommandHandler("unsort", unsort))
     app.add_handler(CommandHandler("points", points))
     app.add_handler(CommandHandler("quiz", quiz))
     app.add_handler(CommandHandler("addpoints", addpoints))
