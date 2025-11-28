@@ -548,9 +548,7 @@ def main():
     app.add_handler(CommandHandler("avadakedavra", ban_user))
 
 
-    # Health server thread (important for Railway)
-    _start_health_server()
-
+    
     print("🏰 Hogwarts Bot is Now Online!")
 
     # Start bot (NO ASYNCIO.RUN HERE!)
