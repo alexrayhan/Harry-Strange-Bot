@@ -1,8 +1,4 @@
-# bot.py - Hogwarts NEET GC Bot (full, persistent version)
-# Works with python-telegram-bot==21.4
-# Persistence: data.json (automatic). Make sure the file is writable in the container.
-
-# Top of bot.py — paste this exactly at the very top of the file
+from __future__ import annotations
 
 import os
 import json
@@ -10,12 +6,22 @@ import random
 import asyncio
 from typing import Dict, Any
 
+# telegram imports must be available before any function annotations are evaluated
+from telegram import Update, ChatPermissions
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters,
+)
+
 # Read token from env var OR hardcode (ONLY for private repos/testing)
 # Preferred: set BOT_TOKEN in Railway variables and keep this line as below.
 TOKEN = os.environ.get("BOT_TOKEN") or "8214478922:AAEeLgZD3aUSKeN_voD-Aw7Eymd3Ow4bCHU"
 
-# debug prints (safe — TOKEN already defined)
-print("STARTING BOT - PID:", os.getpid() if 'os' in globals() else "no-pid")
+# debug prints (safe — TOKEN already defined and imports loaded)
+print("STARTING BOT - PID:", os.getpid())
 print("DEBUG: TOKEN present?", bool(TOKEN))
 print("DEBUG: Running on Python, process id printed above.")
 
