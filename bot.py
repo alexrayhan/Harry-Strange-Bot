@@ -516,11 +516,6 @@ async def whoami(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 # ----------------- STARTUP & MAIN -----------------
-print("DEBUG: TOKEN present:", bool(TOKEN))
-print("DEBUG: Data loaded, users:", len(user_houses))
-import asyncio as _a
-print("DEBUG: current event loop:", _a.get_event_loop())
-
 def main():
     # token safety check (keep or replace with hardcode if you did)
     if TOKEN.startswith("PASTE_") or not TOKEN:
