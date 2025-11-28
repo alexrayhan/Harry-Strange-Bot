@@ -200,7 +200,30 @@ async def hatsort(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown",
     )
 
-async def resort(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ------------ UNSORT / RESORT (admin) ------------
+async def unsort_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin command: reply to a user's message and /unsort to remove them from their house."""
+    admin = update.effective_user
+    if not is_admin(admin.id):
+        await update.message.reply_text("🚫 Only professors can unsort students.")
+        return
+
+    if not update.message.reply_to_message:
+        await update.message.reply_text("Reply to a student's message and use /unsort")
+        return
+
+    target = update.message.reply_to_message.from_user
+    if target.id in user_houses:
+        old_house = user_houses.pop(target.id)
+        user_names.pop(target.id, None)
+        await save_data()
+        target_name = "@" + target.username if target.username else (target.first_name or str(target.id))
+        await update.message.reply_text(f"🧹 {target_name} has been removed from *{old_house}*.", parse_mode="Markdown")
+    else:
+        await update.message.reply_text("🤔 That student is not sorted into any house yet.")
+
+async def resort_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin command: reply to a user and /resort <House> to move them to another house."""
     admin = update.effective_user
     if not is_admin(admin.id):
         await update.message.reply_text("🚫 Only professors can re-sort students.")
@@ -227,32 +250,9 @@ async def resort(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target_name = user_names[target.id]
     spark = random.choice(["✨", "⚡", "🪄", "🌟"])
     await update.message.reply_text(
-        f"🎩 The Sorting Hat has *changed its mind!*\n{target_name} has been moved to *{new_house}* {spark}",
+        f"🎩 The Sorting Hat has changed its mind!\n{target_name} has been moved to *{new_house}* {spark}",
         parse_mode="Markdown",
     )
-
-async def unsort(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    admin = update.effective_user
-    if not is_admin(admin.id):
-        await update.message.reply_text("🚫 Only professors can unsort students.")
-        return
-
-    if not update.message.reply_to_message:
-        await update.message.reply_text("Reply to a student's message and use /unsort")
-        return
-
-    target = update.message.reply_to_message.from_user
-    if target.id in user_houses:
-        old_house = user_houses.pop(target.id)
-        user_names.pop(target.id, None)
-        await save_data()
-        target_name = "@" + target.username if target.username else (target.first_name or str(target.id))
-        await update.message.reply_text(
-            f"🧹 {target_name} has been *removed* from *{old_house}*.\nThey can now use /sortme to be sorted again.",
-            parse_mode="Markdown",
-        )
-    else:
-        await update.message.reply_text("🤔 That student is not sorted into any house yet.")
 
 # ----------------- HOUSE INFO & POINTS -----------------
 async def houseinfo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -422,7 +422,8 @@ async def handle_quiz_answer(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.chat_data.pop("current_quiz", None)
 
 # ----------------- SPELLS / MODERATION -----------------
-async def expelliarmus(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ------------ MODERATION SPELLS (matching handler names) ------------
+async def mute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin = update.effective_user
     if not is_admin(admin.id):
         await update.message.reply_text("🚫 Only professors can cast Expelliarmus.")
@@ -442,13 +443,13 @@ async def expelliarmus(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await update.message.reply_text("Spell failed — I might not be admin or lack permissions.")
 
-async def avadakedavra(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin = update.effective_user
     if not is_admin(admin.id):
-        await update.message.reply_text("🚫 Only professors can cast Avada Kedavra.")
+        await update.message.reply_text("🚫 Only professors can ban.")
         return
     if not update.message.reply_to_message:
-        await update.message.reply_text("Reply to a user's message and use /avadakedavra to ban them.")
+        await update.message.reply_text("Reply to a user's message and use /avada to ban them.")
         return
 
     target = update.message.reply_to_message.from_user
@@ -458,10 +459,10 @@ async def avadakedavra(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await update.message.reply_text("The curse failed — I might not have ban permissions.")
 
-async def stupefy(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def warn_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin = update.effective_user
     if not is_admin(admin.id):
-        await update.message.reply_text("🚫 Only professors can cast Stupefy.")
+        await update.message.reply_text("🚫 Only professors can warn.")
         return
     if not update.message.reply_to_message:
         await update.message.reply_text("Reply to a user's message and use /stupefy to warn them.")
@@ -541,12 +542,11 @@ def main():
     app.add_handler(CommandHandler("leaderboard", leaderboard))
     app.add_handler(CommandHandler("houseinfo", houseinfo))
     app.add_handler(CommandHandler("unsort", unsort_user))
-    app.add_handler(CommandHandler("resort", resort_user))
-
-    # Admin spells
+app.add_handler(CommandHandler("resort", resort_user))
     app.add_handler(CommandHandler("expelliarmus", mute_user))
     app.add_handler(CommandHandler("stupefy", warn_user))
-    app.add_handler(CommandHandler("avada", ban_user))
+    app.add_handler(CommandHandler("avadakedavra", ban_user))
+
 
     # Health server thread (important for Railway)
     _start_health_server()
