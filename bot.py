@@ -18,7 +18,7 @@ from telegram.ext import (
 
 # ---------------- CONFIG ----------------
 # Prefer env var. Replace the string below only for local/private testing (NOT for public repos)
-TOKEN = os.environ.get("BOT_TOKEN") or "PASTE_YOUR_TOKEN_HERE"
+TOKEN = os.environ.get("BOT_TOKEN") or "8214478922:AAEeLgZD3aUSKeN_voD-Aw7Eymd3Ow4bCHU"
 
 DATA_FILE = "data.json"
 
