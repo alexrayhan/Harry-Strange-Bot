@@ -558,6 +558,37 @@ def main():
     app.add_handler(CommandHandler("addadmin", addadmin))
     app.add_handler(CommandHandler("removeadmin", removeadmin))
 
+# --- START: temporary small web binder to satisfy platforms expecting a web port ---
+# This creates a tiny HTTP server on the PORT env var (Railway provides PORT automatically).
+# It runs in a daemon thread so it won't block the bot. Safe and minimal.
+def _start_health_server():
+    try:
+        import threading
+        import http.server
+        import socketserver
+
+        port = int(os.environ.get("PORT") or os.environ.get("PORT0") or 8000)
+        class SilentHandler(http.server.SimpleHTTPRequestHandler):
+            def log_message(self, format, *args):
+                return  # silence logs
+
+        def _serve():
+            try:
+                with socketserver.TCPServer(("", port), SilentHandler) as httpd:
+                    httpd.serve_forever()
+            except Exception:
+                # if bind fails, ignore — bot will still run (useful for local dev)
+                pass
+
+        t = threading.Thread(target=_serve, daemon=True)
+        t.start()
+        print(f"DEBUG: health server started on port {port}")
+    except Exception as e:
+        print("DEBUG: failed to start health server:", repr(e))
+
+# call it right before app.run_polling()
+_start_health_server()
+# --- END: temporary small web binder ---
     print("🏰 Hogwarts Bot is Now Online!")
 
     # --- START POLLING ON THIS EVENT LOOP ---
