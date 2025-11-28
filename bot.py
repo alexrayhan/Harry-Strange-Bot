@@ -287,6 +287,15 @@ async def houseinfo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(msg, parse_mode="Markdown")
 
+async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = "🏆 **House Leaderboard** 🏆\n\n"
+    sorted_houses = sorted(house_points.items(), key=lambda x: x[1], reverse=True)
+
+    for house, points in sorted_houses:
+        text += f"🏰 **{house}** — {points} points\n"
+
+    await update.message.reply_text(text, parse_mode="Markdown")
+
 async def points(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = "🏆 *Current House Points:*\n\n"
     for h in HOUSES:
