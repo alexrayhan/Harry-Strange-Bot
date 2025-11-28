@@ -22,6 +22,9 @@ HOUSES = ["Gryffindor", "Ravenclaw", "Hufflepuff", "Slytherin"]
 # user_id -> house
 user_houses = {}
 
+# user_id -> display name (@username or first name)
+user_names = {}
+
 # house -> points
 house_points = {h: 0 for h in HOUSES}
 
@@ -54,6 +57,8 @@ async def sortme(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         house = random.choice(HOUSES)
         user_houses[user.id] = house
+     
+    user_names[user.id] = "@" + user.username if user.username else user.first_name
 
     spark = random.choice(["✨", "⚡", "🪄", "🌟"])
     await update.message.reply_text(
@@ -92,6 +97,8 @@ async def hatsort(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Save in the same dict used by /sortme
     user_houses[target.id] = house
+
+    user_names[target.id] = "@" + target.username if target.username else target.first_name
 
     target_name = "@" + target.username if target.username else target.first_name
     spark = random.choice(["✨", "⚡", "🪄", "🌟"])
@@ -134,6 +141,8 @@ async def resort(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target = update.message.reply_to_message.from_user
     user_houses[target.id] = new_house
 
+    user_names[target.id] = "@" + target.username if target.username else target.first_name
+
     target_name = "@" + target.username if target.username else target.first_name
     spark = random.choice(["✨", "⚡", "🪄", "🌟"])
     await update.message.reply_text(
@@ -163,6 +172,9 @@ async def unsort(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if target.id in user_houses:
         old_house = user_houses.pop(target.id)
+
+        user_names.pop(target.id, None)
+
         target_name = "@" + target.username if target.username else target.first_name
         await update.message.reply_text(
             f"🧹 {target_name} has been *removed* from *{old_house}*.\n"
@@ -173,6 +185,43 @@ async def unsort(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "🤔 That student is not sorted into any house yet."
         )
+
+# ================== HOUSE INFO COMMAND ==================
+
+async def houseinfo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not user_houses:
+        await update.message.reply_text("No one has been sorted into any house yet 🥲")
+        return
+
+    # Group users by house
+    house_members = {house: [] for house in HOUSES}
+    for user_id, house in user_houses.items():
+        name = user_names.get(user_id, f"ID:{user_id}")
+        house_members[house].append(name)
+
+    house_emojis = {
+        "Gryffindor": "🦁",
+        "Slytherin": "🐍",
+        "Ravenclaw": "🦅",
+        "Hufflepuff": "🦡",
+    }
+
+    msg = "🏰 *Hogwarts House Info:*\n\n"
+
+    for house in HOUSES:
+        members = house_members[house]
+        emoji = house_emojis.get(house, "⭐")
+        count = len(members)
+
+        if count == 0:
+            msg += f"{emoji} *{house}* — 0 students\n"
+        else:
+            msg += f"{emoji} *{house}* — {count} students:\n"
+            for m in members:
+                msg += f"   • {m}\n"
+            msg += "\n"
+
+    await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def points(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = "🏆 *Current House Points:*\n\n"
@@ -371,6 +420,7 @@ def main():
     app.add_handler(CommandHandler("resort", resort))
     app.add_handler(CommandHandler("unsort", unsort))
     app.add_handler(CommandHandler("points", points))
+    app.add_handler(CommandHandler("houseinfo", houseinfo))
     app.add_handler(CommandHandler("quiz", quiz))
     app.add_handler(CommandHandler("addpoints", addpoints))
     app.add_handler(CommandHandler("deductpoints", deductpoints))
