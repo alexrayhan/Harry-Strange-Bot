@@ -1,3 +1,6 @@
+print("STARTING BOT - PID:", os.getpid())
+print("DEBUG: TOKEN present?", bool(TOKEN))
+import sys; sys.stdout.flush()
 # bot.py - Hogwarts NEET GC Bot (full, persistent version)
 # Works with python-telegram-bot==21.4
 # Persistence: data.json (automatic). Make sure the file is writable in the container.
