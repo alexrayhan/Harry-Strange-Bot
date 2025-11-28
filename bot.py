@@ -74,9 +74,10 @@ async def save_data():
         }
         await asyncio.to_thread(_sync_write, data)
 
-async def load_data():
-    """Load data.json into runtime dicts (call at startup)."""
-    loaded = await asyncio.to_thread(_sync_read)
+# Synchronous loader (safe at startup — doesn't create/close an asyncio loop)
+def load_data_sync():
+    loaded = _sync_read()
+
     # user_houses
     uh = {}
     for k, v in loaded.get("user_houses", {}).items():
@@ -515,17 +516,28 @@ async def whoami(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 # ----------------- STARTUP & MAIN -----------------
+print("DEBUG: TOKEN present:", bool(TOKEN))
+print("DEBUG: Data loaded, users:", len(user_houses))
+import asyncio as _a
+print("DEBUG: current event loop:", _a.get_event_loop())
+
 def main():
-    # token safety check
+    # token safety check (keep or replace with hardcode if you did)
     if TOKEN.startswith("PASTE_") or not TOKEN:
         raise RuntimeError("Please set your bot token in the BOT_TOKEN environment variable or replace the fallback in code.")
 
-    # load persisted data (synchronously before building app)
-    asyncio.run(load_data())
+    # ---- load data synchronously (no event loop created/closed) ----
+    load_data_sync()
 
+    # ---- ensure a running event loop exists for python-telegram-bot internals ----
+    # Create & set a fresh event loop for the main thread (prevents "no current event loop" errors)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    # Build and run the bot (app.run_polling will use the loop we just set)
     app = ApplicationBuilder().token(TOKEN).build()
 
-    # Command handlers
+    # (re)register handlers here (your existing app.add_handler(...) lines)
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("whoami", whoami))
 
@@ -551,6 +563,3 @@ def main():
 
     print("🏰 Hogwarts Bot is Now Online!")
     app.run_polling()
-
-if __name__ == "__main__":
-    main()
