@@ -6,16 +6,8 @@ import random
 import asyncio
 from typing import Dict, Any
 
-# telegram imports must be available before any function annotations are evaluated
-from telegram import Update, ChatPermissions
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters,
-)
-
+from telegram import Update
+from telegram.ext import Application, CommandHandler, ContextTypes
 # Read token from env var OR hardcode (ONLY for private repos/testing)
 # Preferred: set BOT_TOKEN in Railway variables and keep this line as below.
 TOKEN = os.environ.get("BOT_TOKEN") or "8214478922:AAEeLgZD3aUSKeN_voD-Aw7Eymd3Ow4bCHU"
