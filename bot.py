@@ -2,28 +2,22 @@
 # Works with python-telegram-bot==21.4
 # Persistence: data.json (automatic). Make sure the file is writable in the container.
 
+# Top of bot.py — paste this exactly at the very top of the file
+
 import os
-print("STARTING BOT - PID:", os.getpid())
-print("DEBUG: TOKEN present?", bool(TOKEN))
-import sys; sys.stdout.flush()
 import json
 import random
 import asyncio
 from typing import Dict, Any
 
-from telegram import Update, ChatPermissions
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters,
-)
+# Read token from env var OR hardcode (ONLY for private repos/testing)
+# Preferred: set BOT_TOKEN in Railway variables and keep this line as below.
+TOKEN = os.environ.get("BOT_TOKEN") or "8214478922:AAEeLgZD3aUSKeN_voD-Aw7Eymd3Ow4bCHU"
 
-# ----------------- CONFIG -----------------
-# TOKEN is read from environment variable BOT_TOKEN by default.
-# For quick local testing, you may replace the fallback string with your token (NOT recommended for public repos).
-TOKEN = "8214478922:AAEeLgZD3aUSKeN_voD-Aw7Eymd3Ow4bCHU" or "PASTE_YOUR_TOKEN_HERE"
+# debug prints (safe — TOKEN already defined)
+print("STARTING BOT - PID:", os.getpid() if 'os' in globals() else "no-pid")
+print("DEBUG: TOKEN present?", bool(TOKEN))
+print("DEBUG: Running on Python, process id printed above.")
 
 # ----------------- PERSISTENCE ENGINE -----------------
 DATA_FILE = "data.json"
