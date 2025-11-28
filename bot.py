@@ -542,7 +542,7 @@ def main():
     app.add_handler(CommandHandler("leaderboard", leaderboard))
     app.add_handler(CommandHandler("houseinfo", houseinfo))
     app.add_handler(CommandHandler("unsort", unsort_user))
-app.add_handler(CommandHandler("resort", resort_user))
+    app.add_handler(CommandHandler("resort", resort_user))
     app.add_handler(CommandHandler("expelliarmus", mute_user))
     app.add_handler(CommandHandler("stupefy", warn_user))
     app.add_handler(CommandHandler("avadakedavra", ban_user))
