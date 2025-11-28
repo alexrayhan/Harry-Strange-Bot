@@ -519,77 +519,45 @@ async def whoami(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 # ----------------- STARTUP & MAIN -----------------
+# -------------------- MAIN FUNCTION --------------------
+
 def main():
-    # Safety check
-    if not TOKEN or TOKEN.startswith("PASTE_"):
-        raise RuntimeError("Bot token missing. Hardcode it or set BOT_TOKEN env variable.")
+    # Safety check for the bot token
+    if not TOKEN:
+        raise RuntimeError("BOT_TOKEN not set in environment variables")
 
-    # Load persistent data BEFORE event loop
-    load_data_sync()
+    print("DEBUG: TOKEN present?", bool(TOKEN))
+    print("DEBUG: Running on Python, process id printed above.")
 
-    # --- CREATE A NEW EVENT LOOP & SET IT ---
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    # Build application
+    app = Application.builder().token(TOKEN).build()
 
-    # --- BUILD BOT APPLICATION ---
-    app = ApplicationBuilder().token(TOKEN).build()
-
-    # --- REGISTER ALL HANDLERS ---
+    # Register handlers
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("whoami", whoami))
-
     app.add_handler(CommandHandler("sortme", sortme))
-    app.add_handler(CommandHandler("hatsort", hatsort))
-    app.add_handler(CommandHandler("resort", resort))
-    app.add_handler(CommandHandler("unsort", unsort))
-    app.add_handler(CommandHandler("houseinfo", houseinfo))
-
     app.add_handler(CommandHandler("points", points))
     app.add_handler(CommandHandler("addpoints", addpoints))
-    app.add_handler(CommandHandler("deductpoints", deductpoints))
+    app.add_handler(CommandHandler("leaderboard", leaderboard))
+    app.add_handler(CommandHandler("houseinfo", houseinfo))
+    app.add_handler(CommandHandler("unsort", unsort_user))
+    app.add_handler(CommandHandler("resort", resort_user))
 
-    app.add_handler(CommandHandler("quiz", quiz))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_quiz_answer))
+    # Admin spells
+    app.add_handler(CommandHandler("expelliarmus", mute_user))
+    app.add_handler(CommandHandler("stupefy", warn_user))
+    app.add_handler(CommandHandler("avada", ban_user))
 
-    app.add_handler(CommandHandler("expelliarmus", expelliarmus))
-    app.add_handler(CommandHandler("stupefy", stupefy))
-    app.add_handler(CommandHandler("avadakedavra", avadakedavra))
+    # Health server thread (important for Railway)
+    _start_health_server()
 
-    app.add_handler(CommandHandler("addadmin", addadmin))
-    app.add_handler(CommandHandler("removeadmin", removeadmin))
-
-# --- START: temporary small web binder to satisfy platforms expecting a web port ---
-# This creates a tiny HTTP server on the PORT env var (Railway provides PORT automatically).
-# It runs in a daemon thread so it won't block the bot. Safe and minimal.
-def _start_health_server():
-    try:
-        import threading
-        import http.server
-        import socketserver
-
-        port = int(os.environ.get("PORT") or os.environ.get("PORT0") or 8000)
-        class SilentHandler(http.server.SimpleHTTPRequestHandler):
-            def log_message(self, format, *args):
-                return  # silence logs
-
-        def _serve():
-            try:
-                with socketserver.TCPServer(("", port), SilentHandler) as httpd:
-                    httpd.serve_forever()
-            except Exception:
-                # if bind fails, ignore — bot will still run (useful for local dev)
-                pass
-
-        t = threading.Thread(target=_serve, daemon=True)
-        t.start()
-        print(f"DEBUG: health server started on port {port}")
-    except Exception as e:
-        print("DEBUG: failed to start health server:", repr(e))
-
-# call it right before app.run_polling()
-_start_health_server()
-# --- END: temporary small web binder ---
     print("🏰 Hogwarts Bot is Now Online!")
 
-    # --- START POLLING ON THIS EVENT LOOP ---
+    # Start bot (NO ASYNCIO.RUN HERE!)
     app.run_polling()
+
+
+# -------------------- PROGRAM ENTRY --------------------
+
+if __name__ == "__main__":
+    print("STARTING BOT - PID:", os.getpid())
+    main()
