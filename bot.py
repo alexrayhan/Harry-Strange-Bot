@@ -517,22 +517,21 @@ async def whoami(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ----------------- STARTUP & MAIN -----------------
 def main():
-    # token safety check (keep or replace with hardcode if you did)
-    if TOKEN.startswith("PASTE_") or not TOKEN:
-        raise RuntimeError("Please set your bot token in the BOT_TOKEN environment variable or replace the fallback in code.")
+    # Safety check
+    if not TOKEN or TOKEN.startswith("PASTE_"):
+        raise RuntimeError("Bot token missing. Hardcode it or set BOT_TOKEN env variable.")
 
-    # ---- load data synchronously (no event loop created/closed) ----
+    # Load persistent data BEFORE event loop
     load_data_sync()
 
-    # ---- ensure a running event loop exists for python-telegram-bot internals ----
-    # Create & set a fresh event loop for the main thread (prevents "no current event loop" errors)
+    # --- CREATE A NEW EVENT LOOP & SET IT ---
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    # Build and run the bot (app.run_polling will use the loop we just set)
+    # --- BUILD BOT APPLICATION ---
     app = ApplicationBuilder().token(TOKEN).build()
 
-    # (re)register handlers here (your existing app.add_handler(...) lines)
+    # --- REGISTER ALL HANDLERS ---
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("whoami", whoami))
 
@@ -557,4 +556,6 @@ def main():
     app.add_handler(CommandHandler("removeadmin", removeadmin))
 
     print("🏰 Hogwarts Bot is Now Online!")
+
+    # --- START POLLING ON THIS EVENT LOOP ---
     app.run_polling()
