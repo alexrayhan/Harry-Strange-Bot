@@ -4,60 +4,63 @@ import os
 import json
 import random
 import asyncio
+import re
 from typing import Dict, Any
 
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
-# Read token from env var OR hardcode (ONLY for private repos/testing)
-# Preferred: set BOT_TOKEN in Railway variables and keep this line as below.
-TOKEN = os.environ.get("BOT_TOKEN") or "8214478922:AAEeLgZD3aUSKeN_voD-Aw7Eymd3Ow4bCHU"
+from telegram import Update, ChatPermissions
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters,
+)
 
-# debug prints (safe — TOKEN already defined and imports loaded)
-print("STARTING BOT - PID:", os.getpid())
-print("DEBUG: TOKEN present?", bool(TOKEN))
-print("DEBUG: Running on Python, process id printed above.")
+# ---------------- CONFIG ----------------
+# Prefer env var. Replace the string below only for local/private testing (NOT for public repos)
+TOKEN = os.environ.get("BOT_TOKEN") or "PASTE_YOUR_TOKEN_HERE"
 
-# ----------------- PERSISTENCE ENGINE -----------------
 DATA_FILE = "data.json"
-data_lock = asyncio.Lock()
 
 HOUSES = ["Gryffindor", "Ravenclaw", "Hufflepuff", "Slytherin"]
 
-# runtime data structures (populated by load_data)
-user_houses: Dict[int, str] = {}     # user_id -> house
-user_names: Dict[int, str] = {}      # user_id -> display name
-house_points: Dict[str, int] = {h: 0 for h in HOUSES}  # house -> points
-ADMIN_IDS: Dict[int, str] = {}       # user_id -> display name
-quiz_scores: Dict[int, int] = {}     # user_id -> total quiz points
-duel_wins: Dict[int, int] = {}       # user_id -> wins
+# runtime data (populated by load_data_sync)
+user_houses: Dict[int, str] = {}  # user_id -> house name
+user_names: Dict[int, str] = {}  # user_id -> display name
+house_points: Dict[str, int] = {h: 0 for h in HOUSES}
+ADMIN_IDS: Dict[int, str] = {}  # admin_id -> display name
+quiz_scores: Dict[int, int] = {}  # user_id -> quiz score
+duel_wins: Dict[int, int] = {}
 
-def _default_data() -> Dict[str, Any]:
-    return {
-        "user_houses": {},
-        "user_names": {},
-        "house_points": {h: 0 for h in HOUSES},
-        "ADMIN_IDS": {},
-        "quiz_scores": {},
-        "duel_wins": {},
-    }
+# lock for file writes (async)
+data_lock = asyncio.Lock()
 
-def _sync_write(data: Dict[str, Any]):
-    tmp = DATA_FILE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, DATA_FILE)
+# ----------------- UTIL -----------------
+def escape_md(text: str) -> str:
+    """Escape characters that break Telegram Markdown parsing."""
+    if text is None:
+        return ""
+    return re.sub(r"([_*\[\]()~`>#+\-=|{}.!])", r"\\\1", str(text))
+
 
 def _sync_read() -> Dict[str, Any]:
-    if not os.path.exists(DATA_FILE):
-        return _default_data()
-    with open(DATA_FILE, "r", encoding="utf-8") as f:
-        try:
+    """Synchronous file read (used inside load_data_sync)."""
+    try:
+        if not os.path.exists(DATA_FILE):
+            return {}
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
-        except Exception:
-            return _default_data()
+    except Exception:
+        return {}
 
-async def save_data():
-    """Save runtime data to data.json in a background thread."""
+
+def _sync_write(data: Dict[str, Any]) -> None:
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+async def save_data() -> None:
+    """Async wrapper to save runtime structures to disk."""
     async with data_lock:
         data = {
             "user_houses": {str(k): v for k, v in user_houses.items()},
@@ -69,11 +72,11 @@ async def save_data():
         }
         await asyncio.to_thread(_sync_write, data)
 
-# Synchronous loader (safe at startup — doesn't create/close an asyncio loop)
-def load_data_sync():
+
+def load_data_sync() -> None:
+    """Load from data.json synchronously at startup (no event loop created/closed)."""
     loaded = _sync_read()
 
-    # user_houses
     uh = {}
     for k, v in loaded.get("user_houses", {}).items():
         try:
@@ -83,7 +86,6 @@ def load_data_sync():
     user_houses.clear()
     user_houses.update(uh)
 
-    # user_names
     un = {}
     for k, v in loaded.get("user_names", {}).items():
         try:
@@ -93,12 +95,10 @@ def load_data_sync():
     user_names.clear()
     user_names.update(un)
 
-    # house_points (ensure houses exist)
-    hp = loaded.get("house_points", {})
+    hp = loaded.get("house_points", {}) or {}
     for h in HOUSES:
         house_points[h] = int(hp.get(h, 0))
 
-    # ADMIN_IDS
     adm = {}
     for k, v in loaded.get("ADMIN_IDS", {}).items():
         try:
@@ -108,7 +108,6 @@ def load_data_sync():
     ADMIN_IDS.clear()
     ADMIN_IDS.update(adm)
 
-    # quiz_scores
     qs = {}
     for k, v in loaded.get("quiz_scores", {}).items():
         try:
@@ -118,7 +117,6 @@ def load_data_sync():
     quiz_scores.clear()
     quiz_scores.update(qs)
 
-    # duel_wins
     dw = {}
     for k, v in loaded.get("duel_wins", {}).items():
         try:
@@ -128,310 +126,297 @@ def load_data_sync():
     duel_wins.clear()
     duel_wins.update(dw)
 
-def set_user_name_from_obj(user):
-    """Store a display name for user (username if available else first name)."""
-    if not user:
-        return
-    user_names[user.id] = "@" + user.username if user.username else (user.first_name or str(user.id))
 
-# ----------------- HELPERS -----------------
 def is_admin(user_id: int) -> bool:
-    return user_id in ADMIN_IDS
+    return int(user_id) in ADMIN_IDS
 
-# ----------------- BASIC COMMANDS -----------------
+
+# --------------- HEALTH SERVER (small) ---------------
+def _start_health_server():
+    """Start a tiny HTTP server in a daemon thread so platforms expecting a web port don't kill the container."""
+    try:
+        import threading
+        import http.server
+        import socketserver
+
+        port = int(os.environ.get("PORT") or os.environ.get("PORT0") or 8000)
+
+        class SilentHandler(http.server.SimpleHTTPRequestHandler):
+            def log_message(self, format, *args):
+                return
+
+        def _serve():
+            try:
+                with socketserver.TCPServer(("", port), SilentHandler) as httpd:
+                    httpd.serve_forever()
+            except Exception:
+                pass
+
+        t = threading.Thread(target=_serve, daemon=True)
+        t.start()
+        print(f"DEBUG: health server started on port {port}")
+    except Exception as e:
+        print("DEBUG: failed to start health server:", repr(e))
+
+
+# ----------------- COMMAND HANDLERS -----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    set_user_name_from_obj(user)
-    await update.message.reply_text(
-        "🏰 Welcome to the Hogwarts Study Bot!\n\n"
-        "Useful commands:\n"
-        "/sortme — get sorted into a house\n"
-        "/houseinfo — list houses and members\n"
-        "/points — show house points\n"
-        "/quiz — start a NEET quiz question\n\n"
-        "Admins: /hatsort, /resort, /unsort, /addpoints, /deductpoints, /addadmin, /removeadmin"
+    txt = (
+        "🏰 *Hogwarts House Point System*\n\n"
+        "Commands:\n"
+        "/sortme - get sorted into a house\n"
+        "/whoami - see your house and stats\n"
+        "/houseinfo - list members by house\n"
+        "/points - show house points\n"
+        "/leaderboard - show house leaderboard\n"
+        "/quiz - take a quick quiz (reply with option number)\n\n"
+        "Admin (professors) commands (reply to a user's message for some):\n"
+        "/unsort, /resort <House>, /expelliarmus (mute), /stupefy (warn), /avadakedavra (ban)\n"
     )
+    await update.message.reply_text(txt, parse_mode="Markdown")
 
-# ----------------- SORTING & ADMIN SORTS -----------------
+
 async def sortme(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    if user.id in user_houses:
-        house = user_houses[user.id]
-    else:
-        house = random.choice(HOUSES)
-        user_houses[user.id] = house
-
-    set_user_name_from_obj(user)
+    uid = user.id
+    if uid in user_houses:
+        house = user_houses[uid]
+        await update.message.reply_text(f"You are already in *{escape_md(house)}*", parse_mode="Markdown")
+        return
+    house = random.choice(HOUSES)
+    user_houses[uid] = house
+    user_names[uid] = user.username or (user.first_name or str(uid))
     await save_data()
+    await update.message.reply_text(f"🎩 The Sorting Hat has chosen *{escape_md(house)}* for you!", parse_mode="Markdown")
 
-    spark = random.choice(["✨", "⚡", "🪄", "🌟"])
-    await update.message.reply_text(
-        f"🎩 The Sorting Hat has spoken!\nYou’ve been sorted into *{house}* {spark}",
-        parse_mode="Markdown",
-    )
 
-async def hatsort(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    admin = update.effective_user
-    if not is_admin(admin.id):
-        await update.message.reply_text("🚫 Only professors can use this.")
-        return
-
-    if not update.message.reply_to_message:
-        await update.message.reply_text("Reply to a student's message and use /hatsort <optional_house>")
-        return
-
-    target = update.message.reply_to_message.from_user
-    if context.args:
-        house = context.args[0].capitalize()
-        if house not in HOUSES:
-            await update.message.reply_text("❌ Invalid house name.")
-            return
+async def whoami(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    uid = user.id
+    house = user_houses.get(uid)
+    name = user_names.get(uid, user.username or user.first_name or str(uid))
+    name_esc = escape_md(name)
+    if house:
+        await update.message.reply_text(f"👤 {name_esc}\n🏠 *House:* {escape_md(house)}\n🏆 Quiz points: {quiz_scores.get(uid,0)}", parse_mode="Markdown")
     else:
-        house = random.choice(HOUSES)
+        await update.message.reply_text(f"👤 {name_esc}\nYou are not sorted yet. Use /sortme.", parse_mode="Markdown")
 
-    user_houses[target.id] = house
-    user_names[target.id] = "@" + target.username if target.username else (target.first_name or str(target.id))
-    await save_data()
 
-    target_name = user_names[target.id]
-    spark = random.choice(["✨", "⚡", "🪄", "🌟"])
-    await update.message.reply_text(
-        f"🎩 The Sorting Hat has *manually* spoken!\n{target_name} has been placed in *{house}* {spark}",
-        parse_mode="Markdown",
-    )
-
-# ------------ UNSORT / RESORT (admin) ------------
-async def unsort_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Admin command: reply to a user's message and /unsort to remove them from their house."""
-    admin = update.effective_user
-    if not is_admin(admin.id):
-        await update.message.reply_text("🚫 Only professors can unsort students.")
-        return
-
-    if not update.message.reply_to_message:
-        await update.message.reply_text("Reply to a student's message and use /unsort")
-        return
-
-    target = update.message.reply_to_message.from_user
-    if target.id in user_houses:
-        old_house = user_houses.pop(target.id)
-        user_names.pop(target.id, None)
-        await save_data()
-        target_name = "@" + target.username if target.username else (target.first_name or str(target.id))
-        await update.message.reply_text(f"🧹 {target_name} has been removed from *{old_house}*.", parse_mode="Markdown")
-    else:
-        await update.message.reply_text("🤔 That student is not sorted into any house yet.")
-
-async def resort_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Admin command: reply to a user and /resort <House> to move them to another house."""
-    admin = update.effective_user
-    if not is_admin(admin.id):
-        await update.message.reply_text("🚫 Only professors can re-sort students.")
-        return
-
-    if not update.message.reply_to_message:
-        await update.message.reply_text("Reply to a student's message and use /resort <house>")
-        return
-
-    if not context.args:
-        await update.message.reply_text("You must specify a house. Example: /resort Gryffindor")
-        return
-
-    new_house = context.args[0].capitalize()
-    if new_house not in HOUSES:
-        await update.message.reply_text("❌ Invalid house name.")
-        return
-
-    target = update.message.reply_to_message.from_user
-    user_houses[target.id] = new_house
-    user_names[target.id] = "@" + target.username if target.username else (target.first_name or str(target.id))
-    await save_data()
-
-    target_name = user_names[target.id]
-    spark = random.choice(["✨", "⚡", "🪄", "🌟"])
-    await update.message.reply_text(
-        f"🎩 The Sorting Hat has changed its mind!\n{target_name} has been moved to *{new_house}* {spark}",
-        parse_mode="Markdown",
-    )
-
-# ----------------- HOUSE INFO & POINTS -----------------
 async def houseinfo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not user_houses:
-        await update.message.reply_text("No one has been sorted into any house yet 🥲")
-        return
-
-    house_members = {house: [] for house in HOUSES}
-    for user_id, house in user_houses.items():
-        name = user_names.get(user_id, f"User {user_id}")
-        house_members[house].append(name)
-
-    house_emojis = {
-        "Gryffindor": "🦁",
-        "Slytherin": "🐍",
-        "Ravenclaw": "🦅",
-        "Hufflepuff": "🦡",
-    }
-
-    msg = "🏰 *Hogwarts House Information*\n\n"
+    result = "🏰 *House Members* 🏰\n\n"
     for house in HOUSES:
-        emoji = house_emojis.get(house, "✨")
-        members = house_members[house]
-        count = len(members)
-        if count == 0:
-            msg += f"{emoji} *{house}*: No students yet\n\n"
-        else:
-            msg += f"{emoji} *{house}* — {count} students:\n"
-            for m in members:
-                msg += f" • {m}\n"
-            msg += "\n"
+        result += f"🎓 *{escape_md(house)}*\n"
+        members = [uid for uid, h in user_houses.items() if h == house]
+        if not members:
+            result += "_No students yet._\n\n"
+            continue
+        for uid in members:
+            name = escape_md(user_names.get(uid, str(uid)))
+            result += f"• {name}\n"
+        result += "\n"
+    await update.message.reply_text(result, parse_mode="Markdown")
 
-    await update.message.reply_text(msg, parse_mode="Markdown")
-
-async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = "🏆 **House Leaderboard** 🏆\n\n"
-    sorted_houses = sorted(house_points.items(), key=lambda x: x[1], reverse=True)
-
-    for house, points in sorted_houses:
-        text += f"🏰 **{house}** — {points} points\n"
-
-    await update.message.reply_text(text, parse_mode="Markdown")
 
 async def points(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = "🏆 *Current House Points:*\n\n"
+    lines = ["🏅 *House Points*"]
     for h in HOUSES:
-        msg += f"{h}: {house_points.get(h, 0)} points\n"
-    await update.message.reply_text(msg, parse_mode="Markdown")
+        lines.append(f"{escape_md(h)} — {house_points.get(h,0)}")
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
 
 async def addpoints(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    caller = update.effective_user
-    if not is_admin(caller.id):
-        await update.message.reply_text("🚫 Only professors can add points.")
+    # Admin-only: /addpoints <house> <amount>
+    user = update.effective_user
+    if not is_admin(user.id):
+        await update.message.reply_text("🚫 Only admins can add points.")
         return
-
     if len(context.args) < 2:
-        await update.message.reply_text("Usage: /addpoints <house> <points>")
+        await update.message.reply_text("Usage: /addpoints <house> <amount>")
         return
-
     house = context.args[0].capitalize()
-    if house not in HOUSES:
-        await update.message.reply_text("❌ Invalid house name.")
-        return
-
     try:
-        pts = int(context.args[1])
+        amount = int(context.args[1])
     except Exception:
-        await update.message.reply_text("⚠️ Points must be a number.")
+        await update.message.reply_text("Amount must be integer.")
         return
-
-    house_points[house] = house_points.get(house, 0) + pts
+    if house not in HOUSES:
+        await update.message.reply_text("Invalid house.")
+        return
+    house_points[house] = house_points.get(house, 0) + amount
     await save_data()
-    await update.message.reply_text(f"✨ Added {pts} points to *{house}*.", parse_mode="Markdown")
+    await update.message.reply_text(f"✅ Added {amount} points to {escape_md(house)}.", parse_mode="Markdown")
+
 
 async def deductpoints(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    caller = update.effective_user
-    if not is_admin(caller.id):
-        await update.message.reply_text("🚫 Only professors can deduct points.")
+    user = update.effective_user
+    if not is_admin(user.id):
+        await update.message.reply_text("🚫 Only admins can deduct points.")
         return
-
     if len(context.args) < 2:
-        await update.message.reply_text("Usage: /deductpoints <house> <points>")
+        await update.message.reply_text("Usage: /deductpoints <house> <amount>")
         return
-
     house = context.args[0].capitalize()
-    if house not in HOUSES:
-        await update.message.reply_text("❌ Invalid house name.")
-        return
-
     try:
-        pts = int(context.args[1])
+        amount = int(context.args[1])
     except Exception:
-        await update.message.reply_text("⚠️ Points must be a number.")
+        await update.message.reply_text("Amount must be integer.")
         return
-
-    house_points[house] = house_points.get(house, 0) - pts
+    if house not in HOUSES:
+        await update.message.reply_text("Invalid house.")
+        return
+    house_points[house] = max(0, house_points.get(house, 0) - amount)
     await save_data()
-    await update.message.reply_text(f"⚠️ Deducted {pts} points from *{house}*.", parse_mode="Markdown")
+    await update.message.reply_text(f"✅ Deducted {amount} points from {escape_md(house)}.", parse_mode="Markdown")
 
-# ----------------- SIMPLE QUIZ SYSTEM -----------------
-# small curated NEET-style questions; extend as needed
-QUIZ_QUESTIONS = [
+
+async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    sorted_houses = sorted(house_points.items(), key=lambda x: x[1], reverse=True)
+    text = "🏆 *House Leaderboard* 🏆\n\n"
+    for house, pts in sorted_houses:
+        text += f"🏰 *{escape_md(house)}* — {pts} points\n"
+    await update.message.reply_text(text, parse_mode="Markdown")
+
+
+# ---------------- Quiz ----------------
+SAMPLE_QUIZZES = [
     {
-        "question": "Which blood group is considered the universal donor?",
-        "options": ["A", "B", "AB", "O"],
-        "answer_index": 3,
-        "points": 10,
+        "q": "What is the powerhouse of the cell?",
+        "opts": ["Nucleus", "Mitochondria", "Ribosome", "Golgi"],
+        "a": 2,
+        "points": 5,
     },
     {
-        "question": "Deficiency of which vitamin causes scurvy?",
-        "options": ["Vitamin A", "Vitamin B12", "Vitamin C", "Vitamin D"],
-        "answer_index": 2,
-        "points": 10,
-    },
-    {
-        "question": "Which organelle is known as the powerhouse of the cell?",
-        "options": ["Ribosome", "Mitochondria", "Golgi apparatus", "Nucleus"],
-        "answer_index": 1,
-        "points": 10,
+        "q": "Which vitamin is synthesised in skin on sunlight exposure?",
+        "opts": ["Vitamin A", "Vitamin B12", "Vitamin C", "Vitamin D"],
+        "a": 4,
+        "points": 5,
     },
 ]
 
+
 async def quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = random.choice(QUIZ_QUESTIONS)
-    context.chat_data["current_quiz"] = q
-    options_text = "\n".join([f"{i+1}. {opt}" for i, opt in enumerate(q["options"])])
-    await update.message.reply_text(
-        f"❓ *NEET Quiz Time!*\n\n{q['question']}\n\n{options_text}\n\nReply with the option number (1-{len(q['options'])})",
-        parse_mode="Markdown",
-    )
+    q = random.choice(SAMPLE_QUIZZES)
+    text = f"*Quiz Time!* {escape_md(q['q'])}\n\n"
+    for i, opt in enumerate(q["opts"], start=1):
+        text += f"{i}. {escape_md(opt)}\n"
+    # store correct answer in user_data
+    context.user_data["quiz_answer"] = q["a"]
+    context.user_data["quiz_points"] = q.get("points", 3)
+    await update.message.reply_text(text + "\nReply with the option number (e.g. 1).", parse_mode="Markdown")
+
 
 async def handle_quiz_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if "current_quiz" not in context.chat_data:
-        return
-    user = update.effective_user
-    text = update.message.text.strip()
-    q = context.chat_data["current_quiz"]
-
+    if "quiz_answer" not in context.user_data:
+        return  # ignore non-quiz messages
     try:
-        chosen = int(text) - 1
+        ans = int(update.message.text.strip().split()[0])
     except Exception:
-        await update.message.reply_text("⚠️ Reply with the *number* of the option.", parse_mode="Markdown")
+        await update.message.reply_text("Please reply with the option number (e.g. 1).")
         return
-
-    if chosen < 0 or chosen >= len(q["options"]):
-        await update.message.reply_text("⚠️ That option number is out of range.")
-        return
-
-    # ensure user sorted
-    if user.id not in user_houses:
-        await update.message.reply_text("You’re not sorted yet! Use /sortme first 🧙‍♂️")
-        context.chat_data.pop("current_quiz", None)
-        return
-
-    house = user_houses[user.id]
-    if chosen == q["answer_index"]:
-        # correct
-        house_points[house] = house_points.get(house, 0) + q["points"]
-        quiz_scores[user.id] = quiz_scores.get(user.id, 0) + q["points"]
+    correct = context.user_data.pop("quiz_answer", None)
+    pts = context.user_data.pop("quiz_points", 3)
+    uid = update.effective_user.id
+    if ans == int(correct):
+        quiz_scores[uid] = quiz_scores.get(uid, 0) + pts
         await save_data()
-        fireworks = " ".join(random.choices(["🎆", "🎇", "✨", "🌟"], k=3))
-        await update.message.reply_text(f"✅ Correct! {q['points']} points to *{house}*! {fireworks}", parse_mode="Markdown")
+        await update.message.reply_text(f"✅ Correct! You earned {pts} points.")
     else:
-        correct_opt = q["options"][q["answer_index"]]
-        await update.message.reply_text(f"❌ Incorrect.\nRight answer: *{correct_opt}*.", parse_mode="Markdown")
+        await update.message.reply_text("❌ Incorrect. Better luck next time.")
 
-    context.chat_data.pop("current_quiz", None)
 
-# ----------------- SPELLS / MODERATION -----------------
-# ------------ MODERATION SPELLS (matching handler names) ------------
+# ---------------- Admin & Moderation ----------------
+async def addadmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # /addadmin <user_id> <display_name>
+    # Only existing admin can add new admin
+    caller = update.effective_user
+    if not is_admin(caller.id):
+        await update.message.reply_text("🚫 Only admins can add another admin.")
+        return
+    if len(context.args) < 2:
+        await update.message.reply_text("Usage: /addadmin <user_id> <display_name>")
+        return
+    try:
+        new_id = int(context.args[0])
+    except Exception:
+        await update.message.reply_text("user_id must be an integer.")
+        return
+    display = " ".join(context.args[1:])
+    ADMIN_IDS[new_id] = display
+    await save_data()
+    await update.message.reply_text(f"✅ Added admin {escape_md(display)} ({new_id}).", parse_mode="Markdown")
+
+
+async def removeadmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    caller = update.effective_user
+    if not is_admin(caller.id):
+        await update.message.reply_text("🚫 Only admins can remove admin.")
+        return
+    if not context.args:
+        await update.message.reply_text("Usage: /removeadmin <user_id>")
+        return
+    try:
+        rem = int(context.args[0])
+    except Exception:
+        await update.message.reply_text("user_id must be integer.")
+        return
+    if rem in ADMIN_IDS:
+        ADMIN_IDS.pop(rem, None)
+        await save_data()
+        await update.message.reply_text(f"✅ Removed admin {rem}.")
+    else:
+        await update.message.reply_text("That user is not an admin.")
+
+
+# Unsor / Resort (admin)
+async def unsort_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    admin = update.effective_user
+    if not is_admin(admin.id):
+        await update.message.reply_text("🚫 Only admins can unsort a user.")
+        return
+    if not update.message.reply_to_message:
+        await update.message.reply_text("Reply to a user's message and use /unsort.")
+        return
+    target = update.message.reply_to_message.from_user
+    if target.id in user_houses:
+        old = user_houses.pop(target.id)
+        user_names.pop(target.id, None)
+        await save_data()
+        await update.message.reply_text(f"🧹 {escape_md(target.username or target.first_name or str(target.id))} removed from {escape_md(old)}", parse_mode="Markdown")
+    else:
+        await update.message.reply_text("That user was not sorted.")
+
+
+async def resort_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    admin = update.effective_user
+    if not is_admin(admin.id):
+        await update.message.reply_text("🚫 Only admins can resort a user.")
+        return
+    if not update.message.reply_to_message:
+        await update.message.reply_text("Reply to a user's message and use /resort <House>.")
+        return
+    if not context.args:
+        await update.message.reply_text("Specifiy the house: /resort Gryffindor")
+        return
+    new_house = context.args[0].capitalize()
+    if new_house not in HOUSES:
+        await update.message.reply_text("Invalid house.")
+        return
+    target = update.message.reply_to_message.from_user
+    user_houses[target.id] = new_house
+    user_names[target.id] = target.username or target.first_name or str(target.id)
+    await save_data()
+    await update.message.reply_text(f"🔁 {escape_md(user_names[target.id])} moved to {escape_md(new_house)}", parse_mode="Markdown")
+
+
+# Moderation spells
 async def mute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin = update.effective_user
     if not is_admin(admin.id):
-        await update.message.reply_text("🚫 Only professors can cast Expelliarmus.")
+        await update.message.reply_text("🚫 Only admins can mute.")
         return
     if not update.message.reply_to_message:
-        await update.message.reply_text("Reply to a user's message and use /expelliarmus to mute them.")
+        await update.message.reply_text("Reply to the user's message you want to mute.")
         return
-
     target = update.message.reply_to_message.from_user
     try:
         await context.bot.restrict_chat_member(
@@ -439,97 +424,52 @@ async def mute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_id=target.id,
             permissions=ChatPermissions(can_send_messages=False),
         )
-        await update.message.reply_text(f"🪄 {ADMIN_IDS.get(admin.id,'Professor')} cast *Expelliarmus!* {user_names.get(target.id, target.first_name)} has been muted.", parse_mode="Markdown")
+        await update.message.reply_text(f"🔇 {escape_md(user_names.get(target.id, target.first_name or str(target.id)))} muted.")
     except Exception:
-        await update.message.reply_text("Spell failed — I might not be admin or lack permissions.")
+        await update.message.reply_text("Failed to mute (missing permissions?).")
 
-async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    admin = update.effective_user
-    if not is_admin(admin.id):
-        await update.message.reply_text("🚫 Only professors can ban.")
-        return
-    if not update.message.reply_to_message:
-        await update.message.reply_text("Reply to a user's message and use /avada to ban them.")
-        return
-
-    target = update.message.reply_to_message.from_user
-    try:
-        await context.bot.ban_chat_member(chat_id=update.effective_chat.id, user_id=target.id)
-        await update.message.reply_text(f"💀 {ADMIN_IDS.get(admin.id,'Professor')} whispered *Avada Kedavra!* {user_names.get(target.id, target.first_name)} has been banned.", parse_mode="Markdown")
-    except Exception:
-        await update.message.reply_text("The curse failed — I might not have ban permissions.")
 
 async def warn_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin = update.effective_user
     if not is_admin(admin.id):
-        await update.message.reply_text("🚫 Only professors can warn.")
+        await update.message.reply_text("🚫 Only admins can warn.")
         return
     if not update.message.reply_to_message:
-        await update.message.reply_text("Reply to a user's message and use /stupefy to warn them.")
+        await update.message.reply_text("Reply to the user's message you want to warn.")
         return
-
     target = update.message.reply_to_message.from_user
-    await update.message.reply_text(f"✨ {ADMIN_IDS.get(admin.id,'Professor')} cast *Stupefy!* {user_names.get(target.id, target.first_name)} has been warned.", parse_mode="Markdown")
+    await update.message.reply_text(f"⚡ {escape_md(user_names.get(target.id, target.first_name or str(target.id)))} has been warned.")
 
-# ----------------- ADMIN MANAGEMENT -----------------
-async def addadmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    caller = update.effective_user
-    if not is_admin(caller.id):
-        await update.message.reply_text("🚫 Only an existing professor can add admins.")
+
+async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    admin = update.effective_user
+    if not is_admin(admin.id):
+        await update.message.reply_text("🚫 Only admins can ban.")
         return
-    if len(context.args) < 1:
-        await update.message.reply_text("Usage: /addadmin <user_id> <display_name_optional>")
+    if not update.message.reply_to_message:
+        await update.message.reply_text("Reply to the user's message you want to ban.")
         return
+    target = update.message.reply_to_message.from_user
     try:
-        uid = int(context.args[0])
+        await context.bot.ban_chat_member(chat_id=update.effective_chat.id, user_id=target.id)
+        await update.message.reply_text(f"💀 {escape_md(user_names.get(target.id, target.first_name or str(target.id)))} has been banned.")
     except Exception:
-        await update.message.reply_text("Invalid user id.")
-        return
-    name = " ".join(context.args[1:]) if len(context.args) > 1 else "Professor"
-    ADMIN_IDS[uid] = name
-    await save_data()
-    await update.message.reply_text(f"✅ Added admin: {name} ({uid})")
+        await update.message.reply_text("Failed to ban (missing permissions?).")
 
-async def removeadmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    caller = update.effective_user
-    if not is_admin(caller.id):
-        await update.message.reply_text("🚫 Only an existing professor can remove admins.")
-        return
-    if len(context.args) < 1:
-        await update.message.reply_text("Usage: /removeadmin <user_id>")
-        return
-    try:
-        uid = int(context.args[0])
-    except Exception:
-        await update.message.reply_text("Invalid user id.")
-        return
-    removed = ADMIN_IDS.pop(uid, None)
-    await save_data()
-    await update.message.reply_text(f"✅ Removed admin: {removed if removed else uid}")
 
-# ----------------- UTILITY COMMANDS -----------------
-async def whoami(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    name = user_names.get(user.id, "Unknown")
-    house = user_houses.get(user.id, None)
-    msg = f"🪄 {name}\n"
-    if house:
-        msg += f"House: *{house}*\n"
-    else:
-        msg += "You are not yet sorted. Use /sortme.\n"
-    msg += f"Total quiz points: {quiz_scores.get(user.id, 0)}\nWins (duels): {duel_wins.get(user.id, 0)}"
-    await update.message.reply_text(msg, parse_mode="Markdown")
-
-# ----------------- STARTUP & MAIN -----------------
-# -------------------- MAIN FUNCTION --------------------
-
+# ----------------- STARTUP / MAIN -----------------
 def main():
-    # Safety check for the bot token
-    if not TOKEN:
-        raise RuntimeError("BOT_TOKEN not set in environment variables")
+    # safety check
+    if not TOKEN or TOKEN == "PASTE_YOUR_TOKEN_HERE":
+        raise RuntimeError("BOT_TOKEN missing. Set BOT_TOKEN env var or hardcode temporarily (not recommended).")
 
-    print("DEBUG: TOKEN present?", bool(TOKEN))
-    print("DEBUG: Running on Python, process id printed above.")
+    # Load persistent data synchronously
+    load_data_sync()
+    print("DEBUG: Data loaded - users:", len(user_houses))
+
+    # Ensure an event loop exists for python-telegram-bot internals
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
     # Build application
     app = Application.builder().token(TOKEN).build()
@@ -537,26 +477,35 @@ def main():
     # Register handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("sortme", sortme))
-    app.add_handler(CommandHandler("points", points))
-    app.add_handler(CommandHandler("addpoints", addpoints))
-    app.add_handler(CommandHandler("leaderboard", leaderboard))
+    app.add_handler(CommandHandler("whoami", whoami))
     app.add_handler(CommandHandler("houseinfo", houseinfo))
+    app.add_handler(CommandHandler("points", points))
+    app.add_handler(CommandHandler("leaderboard", leaderboard))
+
+    app.add_handler(CommandHandler("quiz", quiz))
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_quiz_answer))
+
+    # Admin / moderation handlers
+    app.add_handler(CommandHandler("addadmin", addadmin))
+    app.add_handler(CommandHandler("removeadmin", removeadmin))
+
     app.add_handler(CommandHandler("unsort", unsort_user))
     app.add_handler(CommandHandler("resort", resort_user))
+
+    app.add_handler(CommandHandler("addpoints", addpoints))
+    app.add_handler(CommandHandler("deductpoints", deductpoints))
+
     app.add_handler(CommandHandler("expelliarmus", mute_user))
     app.add_handler(CommandHandler("stupefy", warn_user))
     app.add_handler(CommandHandler("avadakedavra", ban_user))
 
+    # ensure process isn't killed by platforms expecting a web port
+    _start_health_server()
 
-    
     print("🏰 Hogwarts Bot is Now Online!")
-
-    # Start bot (NO ASYNCIO.RUN HERE!)
+    # This blocks and runs the bot. (No asyncio.run to avoid nested loop issues.)
     app.run_polling()
 
 
-# -------------------- PROGRAM ENTRY --------------------
-
 if __name__ == "__main__":
-    print("STARTING BOT - PID:", os.getpid())
     main()
