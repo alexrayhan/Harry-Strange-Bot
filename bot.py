@@ -334,6 +334,7 @@ async def accept(update: Update, context: ContextTypes.DEFAULT_TYPE):
     p1 = active_duel["player1"]
     p2 = active_duel["player2"]
 
+    # init stats
     player_stats[p1]["hp"] = 100
     player_stats[p2]["hp"] = 100
     player_stats[p1]["in_duel"] = True
@@ -345,13 +346,16 @@ async def accept(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "challenged": None,
     })
 
+    challenger_name = user_names.get(p1, "Challenger")
+    target_name = user.first_name
+
     await update.message.reply_text(
-        f"🔥 Duel started!\n\n"
-        f"{escape_md(context.bot.get_chat(p1).first_name)} ❤️100\n"
-        f"{escape_md(context.bot.get_chat(p2).first_name)} ❤️100\n\n"
-        f"➡️ <b>{context.bot.get_chat(p1).first_name}'s turn</b>\n"
-        f"Use /stupefy",
-        parse_mode="HTML"
+        f"🔥 *Duel Started!*\n\n"
+        f"{escape_md(challenger_name)} ❤️100\n"
+        f"{escape_md(target_name)} ❤️100\n\n"
+        f"➡️ *{escape_md(challenger_name)}'s turn*\n"
+        f"Use `/cast_stupefy`",
+        parse_mode="Markdown"
     )
 
 async def decline(update: Update, context: ContextTypes.DEFAULT_TYPE):
