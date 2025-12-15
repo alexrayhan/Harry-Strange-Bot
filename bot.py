@@ -15,7 +15,23 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
+# -------- DUEL SYSTEM (PHASE A) --------
 
+player_stats = {}  # user_id -> {"hp": int, "in_duel": bool}
+
+active_duel = {
+    "active": False,
+    "player1": None,
+    "player2": None,
+    "turn": None,
+    "challenged": None,
+}
+def init_player(user_id: int):
+    if user_id not in player_stats:
+        player_stats[user_id] = {
+            "hp": 100,
+            "in_duel": False
+        }
 # ---------------- CONFIG ----------------
 # Prefer env var. Replace the string below only for local/private testing (NOT for public repos)
 TOKEN = os.environ.get("BOT_TOKEN") or "8214478922:AAEeLgZD3aUSKeN_voD-Aw7Eymd3Ow4bCHU"
@@ -276,6 +292,138 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += f"🏰 *{escape_md(house)}* — {pts} points\n"
     await update.message.reply_text(text, parse_mode="Markdown")
 
+async def duel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    challenger = update.effective_user
+
+    if active_duel["active"]:
+        await update.message.reply_text("⚔️ A duel is already in progress. Wait your turn.")
+        return
+
+    if not update.message.reply_to_message:
+        await update.message.reply_text("Reply to a user's message to challenge them.")
+        return
+
+    target = update.message.reply_to_message.from_user
+
+    if target.id == challenger.id:
+        await update.message.reply_text("You can’t duel yourself.")
+        return
+
+    init_player(challenger.id)
+    init_player(target.id)
+
+    active_duel.update({
+        "active": False,
+        "player1": challenger.id,
+        "player2": target.id,
+        "turn": None,
+        "challenged": target.id,
+    })
+
+    await update.message.reply_text(
+        f"⚔️ {challenger.first_name} challenges {target.first_name}!\n"
+        f"{target.first_name}, type /accept or /decline."
+    )
+
+async def accept(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+
+    if active_duel["challenged"] != user.id:
+        return
+
+    p1 = active_duel["player1"]
+    p2 = active_duel["player2"]
+
+    player_stats[p1]["hp"] = 100
+    player_stats[p2]["hp"] = 100
+    player_stats[p1]["in_duel"] = True
+    player_stats[p2]["in_duel"] = True
+
+    active_duel.update({
+        "active": True,
+        "turn": p1,
+        "challenged": None,
+    })
+
+    await update.message.reply_text(
+        f"🔥 Duel started!\n\n"
+        f"{escape_md(context.bot.get_chat(p1).first_name)} ❤️100\n"
+        f"{escape_md(context.bot.get_chat(p2).first_name)} ❤️100\n\n"
+        f"➡️ <b>{context.bot.get_chat(p1).first_name}'s turn</b>\n"
+        f"Use /stupefy",
+        parse_mode="HTML"
+    )
+
+async def decline(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+
+    if active_duel["challenged"] != user.id:
+        return
+
+    active_duel.update({
+        "active": False,
+        "player1": None,
+        "player2": None,
+        "turn": None,
+        "challenged": None,
+    })
+
+    await update.message.reply_text("❌ Duel declined.")
+
+async def cast_stupefy(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+
+    if not active_duel["active"]:
+        return
+
+    if active_duel["turn"] != user.id:
+        await update.message.reply_text("⏳ Not your turn.")
+        return
+
+    attacker = user.id
+    defender = (
+        active_duel["player2"]
+        if attacker == active_duel["player1"]
+        else active_duel["player1"]
+    )
+
+    player_stats[defender]["hp"] -= 15
+
+    atk_name = user.first_name
+    def_name = context.bot.get_chat(defender).first_name
+    def_hp = max(player_stats[defender]["hp"], 0)
+
+    if def_hp <= 0:
+        await update.message.reply_text(
+            f"💥 {atk_name} casts <b>Stupefy!</b>\n"
+            f"💀 {def_name} has been defeated!\n\n"
+            f"🏆 <b>{atk_name} wins the duel!</b>",
+            parse_mode="HTML"
+        )
+
+        # reset
+        for uid in [attacker, defender]:
+            player_stats[uid]["in_duel"] = False
+
+        active_duel.update({
+            "active": False,
+            "player1": None,
+            "player2": None,
+            "turn": None,
+            "challenged": None,
+        })
+        return
+
+    # switch turn
+    active_duel["turn"] = defender
+
+    await update.message.reply_text(
+        f"✨ {atk_name} casts <b>Stupefy!</b>\n"
+        f"{def_name} ❤️{def_hp}\n\n"
+        f"➡️ <b>{def_name}'s turn</b>",
+        parse_mode="HTML"
+    )
+
 
 # ---------------- Quiz ----------------
 SAMPLE_QUIZZES = [
@@ -499,6 +647,10 @@ def main():
     app.add_handler(CommandHandler("stupefy", warn_user))
     app.add_handler(CommandHandler("avadakedavra", ban_user))
 
+    app.add_handler(CommandHandler("duel", duel))
+    app.add_handler(CommandHandler("accept", accept))
+    app.add_handler(CommandHandler("decline", decline))
+    app.add_handler(CommandHandler("cast_stupefy", cast_stupefy))
     # ensure process isn't killed by platforms expecting a web port
     _start_health_server()
 
