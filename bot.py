@@ -391,22 +391,24 @@ async def cast_stupefy(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else active_duel["player1"]
     )
 
+    # deal damage
     player_stats[defender]["hp"] -= 15
+    defender_hp = max(player_stats[defender]["hp"], 0)
 
-    atk_name = user.first_name
-    def_name = context.bot.get_chat(defender).first_name
-    def_hp = max(player_stats[defender]["hp"], 0)
+    attacker_name = user_names.get(attacker, user.first_name)
+    defender_name = user_names.get(defender, "Opponent")
 
-    if def_hp <= 0:
+    # check defeat
+    if defender_hp <= 0:
         await update.message.reply_text(
-            f"💥 {atk_name} casts <b>Stupefy!</b>\n"
-            f"💀 {def_name} has been defeated!\n\n"
-            f"🏆 <b>{atk_name} wins the duel!</b>",
-            parse_mode="HTML"
+            f"💥 *{escape_md(attacker_name)}* casts **Stupefy!**\n"
+            f"💀 *{escape_md(defender_name)}* has fallen!\n\n"
+            f"🏆 *{escape_md(attacker_name)} wins the duel!*",
+            parse_mode="Markdown"
         )
 
-        # reset
-        for uid in [attacker, defender]:
+        # reset duel
+        for uid in (attacker, defender):
             player_stats[uid]["in_duel"] = False
 
         active_duel.update({
@@ -422,10 +424,10 @@ async def cast_stupefy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     active_duel["turn"] = defender
 
     await update.message.reply_text(
-        f"✨ {atk_name} casts <b>Stupefy!</b>\n"
-        f"{def_name} ❤️{def_hp}\n\n"
-        f"➡️ <b>{def_name}'s turn</b>",
-        parse_mode="HTML"
+        f"✨ *{escape_md(attacker_name)}* casts **Stupefy!**\n"
+        f"{escape_md(defender_name)} ❤️{defender_hp}\n\n"
+        f"➡️ *{escape_md(defender_name)}'s turn*",
+        parse_mode="Markdown"
     )
 
 
