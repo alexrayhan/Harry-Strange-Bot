@@ -30,7 +30,10 @@ def init_player(user_id: int):
     if user_id not in player_stats:
         player_stats[user_id] = {
             "hp": 100,
-            "in_duel": False
+            "charisma": 50,
+            "shield": 0,
+            "in_duel": False,
+            "cooldowns": {}
         }
 # ---------------- CONFIG ----------------
 # Prefer env var. Replace the string below only for local/private testing (NOT for public repos)
@@ -174,6 +177,22 @@ def _start_health_server():
     except Exception as e:
         print("DEBUG: failed to start health server:", repr(e))
 
+def start_turn(user_id: int):
+    """Apply start-of-turn effects: charisma regen + cooldown reduction."""
+    stats = player_stats[user_id]
+
+    # Charisma regen
+    stats["charisma"] = min(stats["charisma"] + 5, 100)
+
+    # Reduce cooldowns
+    to_remove = []
+    for spell, cd in stats["cooldowns"].items():
+        stats["cooldowns"][spell] -= 1
+        if stats["cooldowns"][spell] <= 0:
+            to_remove.append(spell)
+
+    for spell in to_remove:
+        del stats["cooldowns"][spell]
 
 # ----------------- COMMAND HANDLERS -----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -334,25 +353,35 @@ async def accept(update: Update, context: ContextTypes.DEFAULT_TYPE):
     p1 = active_duel["player1"]
     p2 = active_duel["player2"]
 
-    # init stats
+    # Reset stats
     player_stats[p1]["hp"] = 100
     player_stats[p2]["hp"] = 100
+    player_stats[p1]["charisma"] = 50
+    player_stats[p2]["charisma"] = 50
+    player_stats[p1]["shield"] = 0
+    player_stats[p2]["shield"] = 0
+    player_stats[p1]["cooldowns"] = {}
+    player_stats[p2]["cooldowns"] = {}
     player_stats[p1]["in_duel"] = True
     player_stats[p2]["in_duel"] = True
 
+    # Activate duel
     active_duel.update({
         "active": True,
         "turn": p1,
         "challenged": None,
     })
 
+    # 🔑 THIS IS THE IMPORTANT LINE
+    start_turn(p1)
+
     challenger_name = user_names.get(p1, "Challenger")
     target_name = user.first_name
 
     await update.message.reply_text(
         f"🔥 *Duel Started!*\n\n"
-        f"{escape_md(challenger_name)} ❤️100\n"
-        f"{escape_md(target_name)} ❤️100\n\n"
+        f"{escape_md(challenger_name)} ❤️100 ✨{player_stats[p1]['charisma']}\n"
+        f"{escape_md(target_name)} ❤️100 ✨{player_stats[p2]['charisma']}\n\n"
         f"➡️ *{escape_md(challenger_name)}'s turn*\n"
         f"Use `/cast_stupefy`",
         parse_mode="Markdown"
@@ -391,14 +420,31 @@ async def cast_stupefy(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else active_duel["player1"]
     )
 
-    # deal damage
-    player_stats[defender]["hp"] -= 15
-    defender_hp = max(player_stats[defender]["hp"], 0)
+    attacker_stats = player_stats[attacker]
+    defender_stats = player_stats[defender]
+
+    # charisma check
+    if attacker_stats["charisma"] < 10:
+        await update.message.reply_text("✨ Not enough Charisma to cast Stupefy.")
+        return
+
+    # cost
+    attacker_stats["charisma"] -= 10
+
+    # damage logic (shield first)
+    damage = 15
+    if defender_stats["shield"] > 0:
+        absorbed = min(defender_stats["shield"], damage)
+        defender_stats["shield"] -= absorbed
+        damage -= absorbed
+
+    defender_stats["hp"] -= damage
+    defender_hp = max(defender_stats["hp"], 0)
 
     attacker_name = user_names.get(attacker, user.first_name)
     defender_name = user_names.get(defender, "Opponent")
 
-    # check defeat
+    # defeat check
     if defender_hp <= 0:
         await update.message.reply_text(
             f"💥 *{escape_md(attacker_name)}* casts **Stupefy!**\n"
@@ -407,7 +453,6 @@ async def cast_stupefy(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
 
-        # reset duel
         for uid in (attacker, defender):
             player_stats[uid]["in_duel"] = False
 
@@ -422,10 +467,12 @@ async def cast_stupefy(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # switch turn
     active_duel["turn"] = defender
+    start_turn(defender)
 
     await update.message.reply_text(
         f"✨ *{escape_md(attacker_name)}* casts **Stupefy!**\n"
-        f"{escape_md(defender_name)} ❤️{defender_hp}\n\n"
+        f"{escape_md(defender_name)} ❤️{defender_hp}\n"
+        f"✨ Charisma left: {attacker_stats['charisma']}\n\n"
         f"➡️ *{escape_md(defender_name)}'s turn*",
         parse_mode="Markdown"
     )
