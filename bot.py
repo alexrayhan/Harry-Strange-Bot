@@ -35,6 +35,17 @@ def init_player(user_id: int):
             "in_duel": False,
             "cooldowns": {}
         }
+def _end_duel(winner: int, loser: int):
+    for uid in (winner, loser):
+        player_stats[uid]["in_duel"] = False
+
+    active_duel.update({
+        "active": False,
+        "player1": None,
+        "player2": None,
+        "turn": None,
+        "challenged": None,
+    })
 # ---------------- CONFIG ----------------
 # Prefer env var. Replace the string below only for local/private testing (NOT for public repos)
 TOKEN = os.environ.get("BOT_TOKEN") or "8214478922:AAEeLgZD3aUSKeN_voD-Aw7Eymd3Ow4bCHU"
@@ -480,6 +491,89 @@ async def cast_stupefy(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"➡️ *{escape_md(defender_name)}'s turn*",
         parse_mode="Markdown"
     )
+async def cast_crucio(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+
+    if not active_duel["active"]:
+        return
+
+    if active_duel["turn"] != user.id:
+        await update.message.reply_text("⏳ Not your turn.")
+        return
+
+    attacker = user.id
+    defender = (
+        active_duel["player2"]
+        if attacker == active_duel["player1"]
+        else active_duel["player1"]
+    )
+
+    atk = player_stats[attacker]
+    dfn = player_stats[defender]
+
+    # Cooldown check
+    if atk["cooldowns"].get("crucio", 0) > 0:
+        await update.message.reply_text("⏳ Crucio is on cooldown.")
+        return
+
+    # Charisma check
+    if atk["charisma"] < 30:
+        await update.message.reply_text("✨ Not enough Charisma to cast Crucio.")
+        return
+
+    # Cost & cooldown
+    atk["charisma"] -= 30
+    atk["cooldowns"]["crucio"] = 2
+
+    # Backlash
+    atk["hp"] -= 5
+
+    # Damage
+    damage = 35
+    if dfn["shield"] > 0:
+        absorbed = min(dfn["shield"], damage)
+        dfn["shield"] -= absorbed
+        damage -= absorbed
+
+    dfn["hp"] -= damage
+
+    atk_name = user_names.get(attacker, user.first_name)
+    dfn_name = user_names.get(defender, "Opponent")
+
+    # Attacker death from backlash
+    if atk["hp"] <= 0:
+        await update.message.reply_text(
+            f"🔥 *{escape_md(atk_name)}* casts **Crucio!**\n"
+            f"💥 The curse backfires!\n"
+            f"💀 *{escape_md(atk_name)}* collapses!\n\n"
+            f"🏆 *{escape_md(dfn_name)} wins the duel!*",
+            parse_mode="Markdown"
+        )
+        _end_duel(attacker, defender)
+        return
+
+    # Defender death
+    if dfn["hp"] <= 0:
+        await update.message.reply_text(
+            f"🔥 *{escape_md(atk_name)}* casts **Crucio!**\n"
+            f"💀 *{escape_md(dfn_name)}* has fallen!\n\n"
+            f"🏆 *{escape_md(atk_name)} wins the duel!*",
+            parse_mode="Markdown"
+        )
+        _end_duel(attacker, defender)
+        return
+
+    # Switch turn
+    active_duel["turn"] = defender
+    start_turn(defender)
+
+    await update.message.reply_text(
+        f"🔥 *{escape_md(atk_name)}* casts **Crucio!**\n"
+        f"{escape_md(dfn_name)} ❤️{dfn['hp']}\n"
+        f"{escape_md(atk_name)} ❤️{atk['hp']} ✨{atk['charisma']}\n\n"
+        f"➡️ *{escape_md(dfn_name)}'s turn*",
+        parse_mode="Markdown"
+    )
 async def debug_duel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
 
@@ -745,6 +839,7 @@ def main():
     app.add_handler(CommandHandler("accept", accept))
     app.add_handler(CommandHandler("decline", decline))
     app.add_handler(CommandHandler("cast_stupefy", cast_stupefy))
+    app.add_handler(CommandHandler("cast_crucio", cast_crucio))
     app.add_handler(CommandHandler("debug_duel", debug_duel))
     # ensure process isn't killed by platforms expecting a web port
     _start_health_server()
