@@ -54,6 +54,10 @@ duel_wins: Dict[int, int] = {}
 # lock for file writes (async)
 data_lock = asyncio.Lock()
 
+ADMINS = {
+    8021336166,  # Shadow
+}
+
 # ----------------- UTIL -----------------
 def escape_md(text: str) -> str:
     """Escape characters that break Telegram Markdown parsing."""
@@ -476,7 +480,44 @@ async def cast_stupefy(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"➡️ *{escape_md(defender_name)}'s turn*",
         parse_mode="Markdown"
     )
+async def debug_duel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
 
+    # Optional: restrict to admins only
+    if user.id not in ADMINS:
+        await update.message.reply_text("⛔ Admins only.")
+        return
+
+    # Reset / init player
+    init_player(user.id)
+
+    player_stats[user.id].update({
+        "hp": 100,
+        "charisma": 50,
+        "shield": 0,
+        "in_duel": True,
+        "cooldowns": {}
+    })
+
+    # Start a self-duel
+    active_duel.update({
+        "active": True,
+        "player1": user.id,
+        "player2": user.id,
+        "turn": user.id,
+        "challenged": None,
+    })
+
+    # Start turn effects
+    start_turn(user.id)
+
+    await update.message.reply_text(
+        "🧪 *Debug Duel Started*\n\n"
+        "You are fighting yourself.\n"
+        "Use `/cast_stupefy` to test spells.\n\n"
+        "➡️ *Your turn*",
+        parse_mode="Markdown"
+    )
 
 # ---------------- Quiz ----------------
 SAMPLE_QUIZZES = [
@@ -704,6 +745,7 @@ def main():
     app.add_handler(CommandHandler("accept", accept))
     app.add_handler(CommandHandler("decline", decline))
     app.add_handler(CommandHandler("cast_stupefy", cast_stupefy))
+    app.add_handler(CommandHandler("debug_duel", debug_duel))
     # ensure process isn't killed by platforms expecting a web port
     _start_health_server()
 
