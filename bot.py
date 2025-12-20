@@ -707,43 +707,63 @@ async def removeadmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def unsort_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
-if user_id not in ADMINS:
-    await update.message.reply_text("❌ Only admins can use this command.")
-    return
-    if not update.message.reply_to_message:
-        await update.message.reply_text("Reply to a user's message and use /unsort.")
+    if user_id not in ADMINS:
+        await update.message.reply_text(
+            "❌ Only admins can use this command.")
         return
+
+    if not update.message.reply_to_message:
+        await update.message.reply_text(
+            "Reply to a user's message and use /unsort.")
+        return
+
     target = update.message.reply_to_message.from_user
+
     if target.id in user_houses:
         old = user_houses.pop(target.id)
         user_names.pop(target.id, None)
         await save_data()
-        await update.message.reply_text(f"🧹 {escape_md(target.username or target.first_name or str(target.id))} removed from {escape_md(old)}", parse_mode="Markdown")
+        await update.message.reply_text(
+            f"🪄 {escape_md(target.username or target.first_name or str(target.id))} "
+            f"removed from {escape_md(old)}",
+            parse_mode="Markdown"
+        )
     else:
-        await update.message.reply_text("That user was not sorted.")
+        await update.message.reply_text(
+            "That user was not sorted.")
 
 
 async def resort_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
-if user_id not in ADMINS:
-    await update.message.reply_text("❌ Only admins can use this command.")
-    return
+    # Admin check
+    if user_id not in ADMINS:
+        await update.message.reply_text(
+            "❌ Only admins can use this command."
+        )
+        return
+
+    # Must reply to a user
     if not update.message.reply_to_message:
-        await update.message.reply_text("Reply to a user's message and use /resort <House>.")
+        await update.message.reply_text(
+            "Reply to a user's message and use /resort."
+        )
         return
-    if not context.args:
-        await update.message.reply_text("Specifiy the house: /resort Gryffindor")
-        return
-    new_house = context.args[0].capitalize()
-    if new_house not in HOUSES:
-        await update.message.reply_text("Invalid house.")
-        return
+
     target = update.message.reply_to_message.from_user
+
+    # Re-sort user (random house)
+    new_house = random.choice(HOUSES)
     user_houses[target.id] = new_house
     user_names[target.id] = target.username or target.first_name or str(target.id)
+
     await save_data()
-    await update.message.reply_text(f"🔁 {escape_md(user_names[target.id])} moved to {escape_md(new_house)}", parse_mode="Markdown")
+
+    await update.message.reply_text(
+        f"🔮 {escape_md(user_names[target.id])} has been re-sorted into "
+        f"*{escape_md(new_house)}*! 🏰",
+        parse_mode="Markdown"
+    )
 
 
 # Moderation spells
