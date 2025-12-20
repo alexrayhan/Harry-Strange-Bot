@@ -707,61 +707,52 @@ async def removeadmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def unsort_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
-    if user_id not in ADMINS:
-        await update.message.reply_text(
-            "❌ Only admins can use this command.")
+    if not is_admin(user_id):
+        await update.message.reply_text("❌ Only admins can unsort users.")
         return
 
     if not update.message.reply_to_message:
-        await update.message.reply_text(
-            "Reply to a user's message and use /unsort.")
+        await update.message.reply_text("Reply to a user's message and use /unsort.")
         return
 
     target = update.message.reply_to_message.from_user
 
-    if target.id in user_houses:
-        old = user_houses.pop(target.id)
-        user_names.pop(target.id, None)
-        await save_data()
-        await update.message.reply_text(
-            f"🪄 {escape_md(target.username or target.first_name or str(target.id))} "
-            f"removed from {escape_md(old)}",
-            parse_mode="Markdown"
-        )
-    else:
-        await update.message.reply_text(
-            "That user was not sorted.")
+    if target.id not in user_houses:
+        await update.message.reply_text("That user is not sorted.")
+        return
+
+    old_house = user_houses.pop(target.id)
+    user_names.pop(target.id, None)
+
+    await save_data()
+
+    await update.message.reply_text(
+        f"🪄 {escape_md(target.first_name)} removed from *{escape_md(old_house)}*.",
+        parse_mode="Markdown"
+    )
 
 
 async def resort_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
-    # Admin check
-     if user_id not in ADMINS:
-        await update.message.reply_text(
-            "❌ Only admins can use this command."
-        )
+    if not is_admin(user_id):
+        await update.message.reply_text("❌ Only admins can resort users.")
         return
 
-    # Must reply to a user
     if not update.message.reply_to_message:
-        await update.message.reply_text(
-            "Reply to a user's message and use /resort."
-        )
+        await update.message.reply_text("Reply to a user's message and use /resort.")
         return
 
     target = update.message.reply_to_message.from_user
-
-    # Re-sort user (random house)
     new_house = random.choice(HOUSES)
+
     user_houses[target.id] = new_house
-    user_names[target.id] = target.username or target.first_name or str(target.id)
+    user_names[target.id] = target.first_name
 
     await save_data()
 
     await update.message.reply_text(
-        f"🔮 {escape_md(user_names[target.id])} has been re-sorted into "
-        f"*{escape_md(new_house)}*! 🏰",
+        f"🔮 {escape_md(target.first_name)} has been sorted into *{escape_md(new_house)}*!",
         parse_mode="Markdown"
     )
 
@@ -770,52 +761,73 @@ async def resort_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def mute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
-    if user_id not in ADMINS:
-       await update.message.reply_text("❌ Only admins can use this command.")
-    return
-    if not update.message.reply_to_message:
-        await update.message.reply_text("Reply to the user's message you want to mute.")
+    if not is_admin(user_id):
+        await update.message.reply_text("❌ Only admins can mute users.")
         return
+
+    if not update.message.reply_to_message:
+        await update.message.reply_text("Reply to the user's message to mute them.")
+        return
+
     target = update.message.reply_to_message.from_user
+
     try:
         await context.bot.restrict_chat_member(
             chat_id=update.effective_chat.id,
             user_id=target.id,
-            permissions=ChatPermissions(can_send_messages=False),
+            permissions=ChatPermissions(can_send_messages=False)
         )
-        await update.message.reply_text(f"🔇 {escape_md(user_names.get(target.id, target.first_name or str(target.id)))} muted.")
+        await update.message.reply_text(
+            f"🔇 {escape_md(target.first_name)} has been muted.",
+            parse_mode="Markdown"
+        )
     except Exception:
-        await update.message.reply_text("Failed to mute (missing permissions?).")
+        await update.message.reply_text("❌ Failed to mute (missing permissions?).")
 
 
 async def warn_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
-    if user_id not in ADMINS:
-       await update.message.reply_text("❌ Only admins can use this command.")
-    return
-    if not update.message.reply_to_message:
-        await update.message.reply_text("Reply to the user's message you want to warn.")
+    if not is_admin(user_id):
+        await update.message.reply_text("❌ Only admins can warn users.")
         return
+
+    if not update.message.reply_to_message:
+        await update.message.reply_text("Reply to the user's message to warn them.")
+        return
+
     target = update.message.reply_to_message.from_user
-    await update.message.reply_text(f"⚡ {escape_md(user_names.get(target.id, target.first_name or str(target.id)))} has been warned.")
+
+    await update.message.reply_text(
+        f"⚠️ {escape_md(target.first_name)} has been warned.",
+        parse_mode="Markdown"
+    )
 
 
 async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
-    if user_id not in ADMINS:
-       await update.message.reply_text("❌ Only admins can use this command.")
-    return
-    if not update.message.reply_to_message:
-        await update.message.reply_text("Reply to the user's message you want to ban.")
+    if not is_admin(user_id):
+        await update.message.reply_text("❌ Only admins can ban users.")
         return
+
+    if not update.message.reply_to_message:
+        await update.message.reply_text("Reply to the user's message to ban them.")
+        return
+
     target = update.message.reply_to_message.from_user
+
     try:
-        await context.bot.ban_chat_member(chat_id=update.effective_chat.id, user_id=target.id)
-        await update.message.reply_text(f"💀 {escape_md(user_names.get(target.id, target.first_name or str(target.id)))} has been banned.")
+        await context.bot.ban_chat_member(
+            chat_id=update.effective_chat.id,
+            user_id=target.id
+        )
+        await update.message.reply_text(
+            f"🚫 {escape_md(target.first_name)} has been banned.",
+            parse_mode="Markdown"
+        )
     except Exception:
-        await update.message.reply_text("Failed to ban (missing permissions?).")
+        await update.message.reply_text("❌ Failed to ban (missing permissions?).")
 
 
 # ----------------- STARTUP / MAIN -----------------
