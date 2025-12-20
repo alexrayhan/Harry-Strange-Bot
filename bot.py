@@ -58,7 +58,9 @@ HOUSES = ["Gryffindor", "Ravenclaw", "Hufflepuff", "Slytherin"]
 user_houses: Dict[int, str] = {}  # user_id -> house name
 user_names: Dict[int, str] = {}  # user_id -> display name
 house_points: Dict[str, int] = {h: 0 for h in HOUSES}
-ADMIN_IDS: Dict[int, str] = {}  # admin_id -> display name
+ADMIN_IDS: Dict[int, str] = {
+    8021336166: "Shadow"
+}
 quiz_scores: Dict[int, int] = {}  # user_id -> quiz score
 duel_wins: Dict[int, int] = {}
 
