@@ -829,6 +829,11 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await update.message.reply_text("❌ Failed to ban (missing permissions?).")
 
+async def myid(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        f"Your ID is: {update.effective_user.id}"
+    )
+
 
 # ----------------- STARTUP / MAIN -----------------
 def main():
@@ -878,6 +883,7 @@ def main():
     app.add_handler(CommandHandler("cast_stupefy", cast_stupefy))
     app.add_handler(CommandHandler("cast_crucio", cast_crucio))
     app.add_handler(CommandHandler("debug_duel", debug_duel))
+    app.add_handler(CommandHandler("myid", myid))
     # ensure process isn't killed by platforms expecting a web port
     _start_health_server()
 
