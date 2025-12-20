@@ -705,10 +705,11 @@ async def removeadmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Unsor / Resort (admin)
 async def unsort_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    admin = update.effective_user
-    if not is_admin(admin.id):
-        await update.message.reply_text("🚫 Only admins can unsort a user.")
-        return
+    user_id = update.effective_user.id
+
+if user_id not in ADMINS:
+    await update.message.reply_text("❌ Only admins can use this command.")
+    return
     if not update.message.reply_to_message:
         await update.message.reply_text("Reply to a user's message and use /unsort.")
         return
@@ -723,10 +724,11 @@ async def unsort_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def resort_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    admin = update.effective_user
-    if not is_admin(admin.id):
-        await update.message.reply_text("🚫 Only admins can resort a user.")
-        return
+    user_id = update.effective_user.id
+
+if user_id not in ADMINS:
+    await update.message.reply_text("❌ Only admins can use this command.")
+    return
     if not update.message.reply_to_message:
         await update.message.reply_text("Reply to a user's message and use /resort <House>.")
         return
@@ -746,10 +748,11 @@ async def resort_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Moderation spells
 async def mute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    admin = update.effective_user
-    if not is_admin(admin.id):
-        await update.message.reply_text("🚫 Only admins can mute.")
-        return
+    user_id = update.effective_user.id
+
+if user_id not in ADMINS:
+    await update.message.reply_text("❌ Only admins can use this command.")
+    return
     if not update.message.reply_to_message:
         await update.message.reply_text("Reply to the user's message you want to mute.")
         return
@@ -766,10 +769,11 @@ async def mute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def warn_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    admin = update.effective_user
-    if not is_admin(admin.id):
-        await update.message.reply_text("🚫 Only admins can warn.")
-        return
+    user_id = update.effective_user.id
+
+if user_id not in ADMINS:
+    await update.message.reply_text("❌ Only admins can use this command.")
+    return
     if not update.message.reply_to_message:
         await update.message.reply_text("Reply to the user's message you want to warn.")
         return
@@ -778,10 +782,11 @@ async def warn_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    admin = update.effective_user
-    if not is_admin(admin.id):
-        await update.message.reply_text("🚫 Only admins can ban.")
-        return
+    user_id = update.effective_user.id
+
+if user_id not in ADMINS:
+    await update.message.reply_text("❌ Only admins can use this command.")
+    return
     if not update.message.reply_to_message:
         await update.message.reply_text("Reply to the user's message you want to ban.")
         return
