@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 import os
@@ -15,6 +16,25 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
+
+async def is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    user = update.effective_user
+    if not user:
+        return False
+
+    # 1️⃣ Hardcoded bot admins
+    if user.id in ADMINS:
+        return True
+
+    # 2️⃣ Telegram group admins
+    try:
+        member = await context.bot.get_chat_member(
+            update.effective_chat.id,
+            user.id
+        )
+        return member.status in ("administrator", "creator")
+    except:
+        return False
 # -------- DUEL SYSTEM (PHASE A) --------
 
 player_stats = {}  # user_id -> {"hp": int, "in_duel": bool}
